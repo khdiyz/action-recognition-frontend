@@ -208,7 +208,11 @@ function App() {
   const handleSelectHistoryItem = (item) => {
     setSelectedHistoryItem(item);
     setVideoUrl(item.video_url);
-    setPredictions(item.predicted_actions);
+    
+    // Check if the predicted_actions is an array of objects or strings
+    const predictedActions = item.predicted_actions;
+    setPredictions(predictedActions);
+    
     setCurrentStep(4);
   };
 
@@ -296,6 +300,19 @@ function App() {
                             <Clock size={12} className="mr-1" />
                             {formatDate(item.created_at)}
                           </p>
+                          <div className="mt-2">
+                            {item.predicted_actions.slice(0, 2).map((action, index) => (
+                              <p key={index} className="text-xs text-slate-300 truncate">
+                                • {typeof action === 'string' ? action : action.label}
+                                {typeof action !== 'string' && action.confidence && (
+                                  <span className="text-emerald-400 ml-1">({action.confidence})</span>
+                                )}
+                              </p>
+                            ))}
+                            {item.predicted_actions.length > 2 && (
+                              <p className="text-xs text-slate-500">+{item.predicted_actions.length - 2} yana...</p>
+                            )}
+                          </div>
                         </div>
                         <a 
                           href={item.video_url} 
