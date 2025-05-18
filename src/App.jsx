@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import FileUpload from './components/FileUpload';
 import ResultsDisplay from './components/ResultsDisplay';
 import Loader from './components/Loader';
-import { PlaySquare, Server, Zap, Upload, History, Trash2, Clock, ChevronDown, ChevronUp, ExternalLink } from 'lucide-react';
+import { PlaySquare, Server, Zap, Upload, History, Trash2, Clock, ChevronDown, ChevronUp, ExternalLink, Download } from 'lucide-react';
 
 // API manzillari (o'zingizning manzillaringiz bilan almashtiring)
 const UPLOAD_API_URL = 'http://localhost:4040/api/files';
@@ -23,6 +23,18 @@ function App() {
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [isDeletingHistory, setIsDeletingHistory] = useState(false);
   const [selectedHistoryItem, setSelectedHistoryItem] = useState(null);
+  const [outputVideoUrl, setOutputVideoUrl] = useState('');
+  const [predictModelApiUrl, setPredictModelApiUrl] = useState(() => {
+    return localStorage.getItem('predictModelApiUrl') || '';
+  });
+  const [isDownloading, setIsDownloading] = useState(false);
+
+  // Save predictModelApiUrl to localStorage whenever it changes
+  useEffect(() => {
+    if (predictModelApiUrl) {
+      localStorage.setItem('predictModelApiUrl', predictModelApiUrl);
+    }
+  }, [predictModelApiUrl]);
 
   // Load history when component mounts or when showHistory changes to true
   useEffect(() => {
@@ -167,6 +179,11 @@ function App() {
       return;
     }
 
+    if (!predictModelApiUrl) {
+      setError('Iltimos, Model API URL manzilini kiriting.');
+      return;
+    }
+
     setIsPredicting(true);
     setError('');
     
@@ -179,7 +196,10 @@ function App() {
           'Content-Type': 'application/json',
           'accept': 'application/json'
         },
-        body: JSON.stringify({ video_url: videoUrl }),
+        body: JSON.stringify({ 
+          predict_api_url: predictModelApiUrl,
+          video_url: videoUrl 
+        }),
       });
 
       if (!predictResponse.ok) {
@@ -189,8 +209,10 @@ function App() {
 
       const predictResult = await predictResponse.json();
       setPredictions(predictResult.predictions || []);
+      setOutputVideoUrl(predictResult.output_video_url);
       setCurrentStep(4);
       console.log('Bashorat natijalari:', predictResult.predictions);
+      console.log('Output video URL:', predictResult.output_video_url);
       
       // Refresh history after successful prediction
       if (showHistory) {
@@ -239,7 +261,16 @@ function App() {
             Videoni yuklang va tizim undagi harakatlarni aniqlaydi.
           </p>
           
-          <div className="flex justify-center mt-2">
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mt-4">
+            <div className="w-full sm:w-auto">
+              <input
+                type="text"
+                value={predictModelApiUrl}
+                onChange={(e) => setPredictModelApiUrl(e.target.value)}
+                placeholder="Model API URL"
+                className="w-full sm:w-96 px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500"
+              />
+            </div>
             <button
               onClick={() => setShowHistory(!showHistory)}
               className="flex items-center text-sky-400 hover:text-sky-300 transition-colors duration-300 text-sm px-4 py-2 rounded-lg bg-slate-700/50 hover:bg-slate-700"
@@ -345,7 +376,7 @@ function App() {
               <div className="text-center">
                 <button
                   onClick={handleUpload}
-                  disabled={isUploading || !videoFile}
+                  disabled={isUploading || !videoFile || !predictModelApiUrl}
                   className="w-full sm:w-auto bg-gradient-to-r from-sky-500 to-cyan-500 hover:from-sky-600 hover:to-cyan-600 text-white font-semibold py-3 px-8 rounded-lg shadow-lg hover:shadow-cyan-500/50 transition-all duration-300 ease-in-out transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
                 >
                   {isUploading ? (
@@ -396,7 +427,7 @@ function App() {
                   <div className="text-center mt-4">
                     <button
                       onClick={handlePredict}
-                      disabled={isPredicting || !videoUrl}
+                      disabled={isPredicting || !videoUrl || !predictModelApiUrl}
                       className="w-full sm:w-auto bg-gradient-to-r from-purple-500 to-indigo-500 hover:from-purple-600 hover:to-indigo-600 text-white font-semibold py-3 px-8 rounded-lg shadow-lg hover:shadow-indigo-500/50 transition-all duration-300 ease-in-out transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
                     >
                       {isPredicting ? (
@@ -433,6 +464,48 @@ function App() {
               <div className={`p-6 rounded-lg bg-slate-700/50 transition-opacity duration-500`}>
                 <h2 className="text-2xl font-semibold text-sky-400 mb-4 text-center sm:text-left">Aniqlangan Harakatlar:</h2>
                 <ResultsDisplay predictions={predictions} />
+                
+                {outputVideoUrl && (
+                  <div className="mt-6 text-center">
+                    <button
+                      onClick={async () => {
+                        try {
+                          setIsDownloading(true);
+                          const response = await fetch(outputVideoUrl);
+                          const blob = await response.blob();
+                          const url = window.URL.createObjectURL(blob);
+                          const a = document.createElement('a');
+                          a.href = url;
+                          a.download = outputVideoUrl.split('/').pop();
+                          document.body.appendChild(a);
+                          a.click();
+                          window.URL.revokeObjectURL(url);
+                          document.body.removeChild(a);
+                        } catch (err) {
+                          console.error('Video yuklab olishda xatolik:', err);
+                          setError('Video yuklab olishda xatolik yuz berdi. Iltimos, qaytadan urinib ko\'ring.');
+                        } finally {
+                          setIsDownloading(false);
+                        }
+                      }}
+                      disabled={isDownloading}
+                      className="inline-flex items-center bg-sky-500 hover:bg-sky-600 text-white px-6 py-3 rounded-lg transition-colors duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {isDownloading ? (
+                        <>
+                          <Loader size="small" />
+                          <span className="ml-2">Yuklanmoqda...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Download size={20} className="mr-2" />
+                          <span>Videoni yuklab olish</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )}
+                
                 {selectedHistoryItem && (
                   <p className="text-xs text-slate-400 mt-4 text-center">
                     <Clock size={12} className="inline mr-1" />
